@@ -308,22 +308,29 @@ Languages:
                            .get("viewer", {})
                            .get("repositories", {}))
             
-            repos = owned_repos.get("nodes", [])
+            # Collect owned repos; GraphQL may return null nodes for deleted repos
+            repos = [r for r in owned_repos.get("nodes", []) if isinstance(r, dict)]
             if self._consider_forked_repos:
-                repos += contrib_repos.get("nodes", [])
+                # Include contributed repos, skipping null nodes
+                repos += [r for r in contrib_repos.get("nodes", []) if isinstance(r, dict)]
             else:
+                # Track contributed repos as ignored (when not counting forks), guarding nulls
                 for repo in contrib_repos.get("nodes", []):
+                    if not isinstance(repo, dict):
+                        continue
                     name = repo.get("nameWithOwner")
                     if name in self._ignored_repos or name in self._exclude_repos:
                         continue
                     self._ignored_repos.add(name)
 
             for repo in repos:
+                if not isinstance(repo, dict):
+                    continue
                 name = repo.get("nameWithOwner")
                 if name in self._repos or name in self._exclude_repos:
                     continue
                 self._repos.add(name)
-                self._stargazers += repo.get("stargazers").get("totalCount", 0)
+                self._stargazers += repo.get("stargazers", {}).get("totalCount", 0)
                 self._forks += repo.get("forkCount", 0)
 
                 for lang in repo.get("languages", {}).get("edges", []):
@@ -354,8 +361,12 @@ Languages:
         # TODO: Improve languages to scale by number of contributions to
         #       specific filetypes
         langs_total = sum([v.get("size", 0) for v in self._languages.values()])
-        for k, v in self._languages.items():
-            v["prop"] = 100 * (v.get("size", 0) / langs_total)
+        if langs_total > 0:
+            for k, v in self._languages.items():
+                v["prop"] = 100 * (v.get("size", 0) / langs_total)
+        else:
+            for k, v in self._languages.items():
+                v["prop"] = 0
 
     @property
     async def name(self) -> str:
